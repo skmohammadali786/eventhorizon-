@@ -30,14 +30,41 @@ export const EventCard: React.FC<EventCardProps> = ({
 
   const handleShare = async (e: React.MouseEvent) => {
     e.stopPropagation();
+
+    // 1. Determine a valid base URL
+    let shareUrl = window.location.href;
+    // Handle iframe/preview environments where location might be 'about:srcdoc' or 'blob:'
+    if (!shareUrl.startsWith('http')) {
+        shareUrl = 'https://eventhorizon.app';
+    }
+
+    // 2. If event has a source URL, validate and use it
+    if (event.sourceUrl && event.sourceUrl.trim() !== '') {
+        try {
+            // Attempt to parse as is
+            new URL(event.sourceUrl);
+            shareUrl = event.sourceUrl;
+        } catch (err) {
+            // If it fails, try prepending https://
+            try {
+                const fixedUrl = `https://${event.sourceUrl}`;
+                new URL(fixedUrl);
+                shareUrl = fixedUrl;
+            } catch (err2) {
+                // Still invalid, fallback to the default shareUrl determined in step 1
+                console.warn("Invalid event source URL, falling back to app URL");
+            }
+        }
+    }
+
     const shareData = {
       title: event.title,
       text: `Check out ${event.title} happening at ${event.location} on ${event.date}!`,
-      url: event.sourceUrl || window.location.href
+      url: shareUrl
     };
 
     try {
-      if (navigator.share) {
+      if (navigator.share && navigator.canShare && navigator.canShare(shareData)) {
         await navigator.share(shareData);
       } else {
         await navigator.clipboard.writeText(`${shareData.title}\n${shareData.text}\n${shareData.url}`);

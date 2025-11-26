@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from 'react';
 import { BottomNav } from './components/BottomNav';
 import { EventCard } from './components/EventCard';
@@ -12,21 +13,15 @@ import { PaymentModal } from './components/PaymentModal';
 import { TicketModal } from './components/TicketModal';
 import { ScannerModal } from './components/ScannerModal';
 import { searchEventsWithGemini, generateItineraryForEvent, getEventDetails } from './services/geminiService';
+import { saveEventToDb, getEventsFromDb, saveTicketToDb, getUserTicketsFromDb, updateEventStats, verifyTicket, confirmTicketEntry, syncUserPreferences, getUserPreferences } from './services/dbService';
+import { logoutUser } from './services/authService';
 import { EventItem, ViewState, LoadingState, Itinerary, User, HistoryItem, FilterOptions, EventDetails, Theme, Ticket } from './types';
-import { Search, Sparkles, AlertCircle, Compass, Plus, CheckCircle, Flame, Flag } from 'lucide-react';
+import { Search, Sparkles, AlertCircle, Compass, Plus, CheckCircle, Flame, Heart } from 'lucide-react';
 
-const SUGGESTED_QUERIES = [
-  "Tech meetups nearby",
-  "Live jazz tonight",
-  "Family outdoor activities",
-  "Art gallery openings",
-  "Indie rock concerts"
-];
-
+const SUGGESTED_QUERIES = ["Tech meetups", "Live jazz", "Family activities", "Art gallery", "Indie rock"];
 const Toast = ({ message, visible }: { message: string, visible: boolean }) => (
-    <div className={`fixed top-6 left-1/2 transform -translate-x-1/2 bg-slate-900 dark:bg-slate-100 text-white dark:text-slate-900 px-6 py-3 rounded-full shadow-2xl border border-slate-700 dark:border-slate-200 flex items-center gap-2 z-[70] transition-all duration-300 ${visible ? 'opacity-100 translate-y-0' : 'opacity-0 -translate-y-4 pointer-events-none'}`}>
-        <CheckCircle size={18} className="text-green-500" />
-        <span className="font-medium text-sm">{message}</span>
+    <div className={`fixed top-6 left-1/2 transform -translate-x-1/2 bg-slate-900 text-white px-6 py-3 rounded-full shadow-2xl z-[70] transition-all ${visible ? 'opacity-100 translate-y-0' : 'opacity-0 -translate-y-4 pointer-events-none'}`}>
+        <div className="flex items-center gap-2"><CheckCircle size={18} className="text-green-500" /><span>{message}</span></div>
     </div>
 );
 
@@ -38,12 +33,10 @@ function App() {
   const [userEvents, setUserEvents] = useState<EventItem[]>([]);
   const [reminders, setReminders] = useState<string[]>([]);
   const [tickets, setTickets] = useState<Ticket[]>([]);
-  
   const [selectedEventDetails, setSelectedEventDetails] = useState<EventDetails | null>(null);
   const [detailsLoading, setDetailsLoading] = useState(false);
   const [itinerary, setItinerary] = useState<Itinerary | null>(null);
   const [itineraryLoading, setItineraryLoading] = useState(false);
-
   const [loadingState, setLoadingState] = useState<LoadingState>(LoadingState.IDLE);
   const [errorMsg, setErrorMsg] = useState('');
   const [filters, setFilters] = useState<FilterOptions>({ date: 'all', category: 'all' });
@@ -52,7 +45,6 @@ function App() {
   const [showPayment, setShowPayment] = useState(false);
   const [showTicket, setShowTicket] = useState(false);
   const [showScanner, setShowScanner] = useState(false);
-  
   const [selectedTicket, setSelectedTicket] = useState<Ticket | null>(null);
   const [toast, setToast] = useState({ msg: '', show: false });
   const [theme, setTheme] = useState<Theme>('light');
@@ -61,47 +53,42 @@ function App() {
 
   useEffect(() => {
     try {
-      const saved = localStorage.getItem('savedEvents');
       const savedUser = localStorage.getItem('user');
-      const savedHistory = localStorage.getItem('history');
-      const savedUserEvents = localStorage.getItem('userEvents');
-      const savedReminders = localStorage.getItem('reminders');
-      const savedTickets = localStorage.getItem('tickets');
       const savedTheme = localStorage.getItem('theme') as Theme;
-
-      if (saved) setSavedEvents(JSON.parse(saved));
-      if (savedUser) setUser(JSON.parse(savedUser));
-      if (savedHistory) setHistory(JSON.parse(savedHistory));
-      if (savedUserEvents) setUserEvents(JSON.parse(savedUserEvents));
-      if (savedReminders) setReminders(JSON.parse(savedReminders));
-      if (savedTickets) setTickets(JSON.parse(savedTickets));
-      
+      if (savedUser) {
+          const u = JSON.parse(savedUser);
+          setUser(u);
+          refreshTickets(u.id);
+          // Sync Preferences from Cloud
+          getUserPreferences(u.id).then(prefs => {
+              if (prefs) {
+                  if (prefs.history) setHistory(prefs.history);
+                  if (prefs.savedEvents) setSavedEvents(prefs.savedEvents);
+                  if (prefs.reminders) setReminders(prefs.reminders);
+              }
+          });
+      }
       if (savedTheme) setTheme(savedTheme);
-      else setTheme('light');
-    } catch (e) {
-      console.error("Error loading local storage", e);
-    }
+      refreshEvents();
+    } catch (e) { console.error(e); }
   }, []);
 
   useEffect(() => {
+    if (user) {
+        syncUserPreferences(user.id, { history, savedEvents, reminders });
+    }
+  }, [history, savedEvents, reminders, user]);
+
+  const refreshEvents = async () => { setUserEvents(await getEventsFromDb()); };
+  const refreshTickets = async (userId: string) => { setTickets(await getUserTicketsFromDb(userId)); };
+
+  useEffect(() => {
     const root = window.document.documentElement;
-    if (theme === 'dark') root.classList.add('dark');
-    else root.classList.remove('dark');
+    if (theme === 'dark') root.classList.add('dark'); else root.classList.remove('dark');
     localStorage.setItem('theme', theme);
   }, [theme]);
 
-  useEffect(() => { try { localStorage.setItem('savedEvents', JSON.stringify(savedEvents)); } catch(e) {} }, [savedEvents]);
-  useEffect(() => { try { if (user) localStorage.setItem('user', JSON.stringify(user)); else localStorage.removeItem('user'); } catch(e) {} }, [user]);
-  useEffect(() => { try { localStorage.setItem('history', JSON.stringify(history)); } catch(e) {} }, [history]);
-  useEffect(() => { try { localStorage.setItem('userEvents', JSON.stringify(userEvents)); } catch(e) {} }, [userEvents]);
-  useEffect(() => { try { localStorage.setItem('reminders', JSON.stringify(reminders)); } catch(e) {} }, [reminders]);
-  useEffect(() => { try { localStorage.setItem('tickets', JSON.stringify(tickets)); } catch(e) {} }, [tickets]);
-
-  const showToast = (msg: string) => {
-      setToast({ msg, show: true });
-      setTimeout(() => setToast({ msg, show: false }), 2000);
-  };
-
+  const showToast = (msg: string) => { setToast({ msg, show: true }); setTimeout(() => setToast({ msg, show: false }), 2000); };
   const toggleTheme = () => setTheme(prev => prev === 'dark' ? 'light' : 'dark');
 
   const addToHistory = (item: Omit<HistoryItem, 'id' | 'timestamp'>) => {
@@ -114,299 +101,285 @@ function App() {
     if (!searchQuery.trim()) return;
     setView('search');
     setLoadingState(LoadingState.LOADING);
-    setErrorMsg('');
     setEvents([]);
     addToHistory({ type: 'search', title: `Search: ${searchQuery}` });
-
-    const normalizedQuery = searchQuery.toLowerCase();
-    const localResults = userEvents.filter(ev => 
-        ev.title.toLowerCase().includes(normalizedQuery) ||
-        ev.location.toLowerCase().includes(normalizedQuery) ||
-        (ev.category && ev.category.toLowerCase().includes(normalizedQuery))
-    );
     
-    const filteredLocal = localResults.filter(ev => {
-         if (filters.category !== 'all' && ev.category !== filters.category) return false;
-         if (filters.date !== 'all') {
-             const evDate = ev.date.toLowerCase();
-             if (filters.date === 'today' && !evDate.includes('today')) return false;
-             if (filters.date === 'weekend' && !evDate.includes('weekend') && !evDate.includes('sat') && !evDate.includes('sun')) return false;
-         }
-         return true;
-    });
-
-    if (filteredLocal.length > 0) setEvents(filteredLocal);
-
     try {
-      const aiResults = await searchEventsWithGemini(searchQuery, filters);
-      setEvents(prev => {
-          const existingIds = new Set(prev.map(p => p.id));
-          const newUnique = aiResults.filter(a => !existingIds.has(a.id));
-          const combined = [...prev, ...newUnique];
-          return combined.sort((a, b) => {
-             if (a.isoDate && b.isoDate) return new Date(a.isoDate).getTime() - new Date(b.isoDate).getTime();
-             return 0;
-          });
-      });
-      setLoadingState(LoadingState.SUCCESS);
-    } catch (error) {
-      if (filteredLocal.length > 0) setLoadingState(LoadingState.SUCCESS);
-      else {
-          setLoadingState(LoadingState.ERROR);
-          setErrorMsg("Could not fetch web results. Showing only local data if available.");
+      // 1. Local Search (Database Events)
+      const lowerQuery = searchQuery.toLowerCase();
+      const localResults = userEvents.filter(e => 
+          e.title.toLowerCase().includes(lowerQuery) || 
+          e.location.toLowerCase().includes(lowerQuery) || 
+          (e.category && e.category.toLowerCase().includes(lowerQuery))
+      );
+
+      // 2. AI Search (Web Events)
+      let aiResults: EventItem[] = [];
+      try {
+          aiResults = await searchEventsWithGemini(searchQuery, filters);
+      } catch (err) {
+          console.error("AI search failed, showing local only");
       }
+
+      // 3. Combine Results
+      const combinedResults = [...localResults, ...aiResults];
+      
+      if (combinedResults.length === 0) {
+          setErrorMsg("No events found.");
+          setLoadingState(LoadingState.ERROR);
+      } else {
+          setEvents(combinedResults);
+          setLoadingState(LoadingState.SUCCESS);
+      }
+    } catch (error) {
+      setLoadingState(LoadingState.ERROR);
+      setErrorMsg("Error fetching results.");
     }
   };
 
-  const handleCreateEvent = (newEvent: EventItem) => {
-      // Add creator ID
+  const handleCreateEvent = async (newEvent: EventItem) => {
       if (user) newEvent.creatorId = user.id;
-      setUserEvents(prev => [newEvent, ...prev]);
-      setView('home');
-      showToast("Event Posted Successfully");
-      setTimeout(() => handleEventClick(newEvent), 500);
-  };
-
-  const handleReportEvent = (event: EventItem) => {
-      showToast("Event Reported. We will review it shortly.");
+      try {
+          const savedEvent = await saveEventToDb(newEvent);
+          setUserEvents(prev => [savedEvent, ...prev]);
+          setView('home');
+          showToast("Event Posted!");
+      } catch (e) { showToast("Failed to post event"); }
   };
 
   const handleEventClick = async (event: EventItem) => {
-    // If it's a user event, find the fresh version from state to get latest seats/attendees
     const freshEvent = userEvents.find(e => e.id === event.id) || event;
-    
     setSelectedEventDetails(freshEvent as EventDetails);
     setView('details');
     setDetailsLoading(true);
     addToHistory({ type: 'view', title: `Viewed: ${freshEvent.title}`, data: freshEvent });
-
     try {
         const richDetails = await getEventDetails(freshEvent);
         setSelectedEventDetails(richDetails);
-    } catch (e) {
-        console.error("Could not fetch details", e);
-    } finally {
-        setDetailsLoading(false);
-    }
+    } catch (e) {} finally { setDetailsLoading(false); }
   };
 
   const handlePlanItinerary = async (event: EventItem) => {
     setSelectedEventDetails(event as EventDetails);
     setView('itinerary');
     setItineraryLoading(true);
-    setItinerary(null);
-    setErrorMsg('');
     
+    // Determine Role: Host or Attendee
+    const isHost = user && user.id === event.creatorId;
+    const role = isHost ? 'host' : 'attendee';
+
     try {
-      const plan = await generateItineraryForEvent(event);
-      if (plan && plan.items && plan.items.length > 0) {
-        setItinerary(plan);
-        addToHistory({ type: 'itinerary', title: `Plan: ${event.title}`, data: plan });
-      } else throw new Error("Generated itinerary was empty");
-    } catch (error) {
-      setErrorMsg("Unable to generate a plan right now. Please try again.");
-    } finally {
-      setItineraryLoading(false);
-    }
+      const plan = await generateItineraryForEvent(event, role);
+      setItinerary(plan);
+      addToHistory({ type: 'itinerary', title: `Plan (${role}): ${event.title}`, data: plan });
+    } catch (error) { setErrorMsg("Itinerary generation failed."); } finally { setItineraryLoading(false); }
   };
 
   const handleToggleSave = (event: EventItem) => {
     if (!user) { setShowAuth(true); return; }
     setSavedEvents(prev => {
-      const isAlreadySaved = prev.some(e => e.id === event.id);
-      if (isAlreadySaved) {
-          showToast("Event Removed from Saved");
-          return prev.filter(e => e.id !== event.id);
-      } else {
-          showToast("Event Saved to Favorites");
-          return [...prev, event];
-      }
+      const exists = prev.some(e => e.id === event.id);
+      showToast(exists ? "Removed from Saved" : "Saved to Favorites");
+      return exists ? prev.filter(e => e.id !== event.id) : [...prev, event];
     });
   };
 
-  const handleToggleReminder = async (event: EventItem) => {
-    const hasReminder = reminders.includes(event.id);
-    if (hasReminder) {
-        setReminders(prev => prev.filter(id => id !== event.id));
-        showToast("Reminder removed");
-        return;
-    }
-    if ('Notification' in window && Notification.permission !== 'granted') {
-        const permission = await Notification.requestPermission();
-        if (permission !== 'granted') { showToast("Notifications blocked"); return; }
-    }
-    setReminders(prev => [...prev, event.id]);
-    showToast("Reminder set successfully");
-    if ('Notification' in window && Notification.permission === 'granted') {
-        setTimeout(() => {
-            new Notification(`Upcoming Event: ${event.title}`, { body: `Don't forget about ${event.title}`, icon: event.imageUrl });
-        }, 5000);
-    }
+  const handleToggleReminder = (event: EventItem) => {
+      setReminders(prev => prev.includes(event.id) ? prev.filter(id => id !== event.id) : [...prev, event.id]);
+      showToast("Reminder updated");
   };
 
-  // Ticketing Logic
   const handleJoinEvent = (event: EventDetails) => {
       if (!user) { setShowAuth(true); return; }
-      if (event.priceValue && event.priceValue > 0) {
-          setShowPayment(true);
-      } else {
-          processTicketGeneration(event);
-      }
+      if (event.priceValue && event.priceValue > 0) setShowPayment(true);
+      else processTicketGeneration(event);
   };
 
-  const processTicketGeneration = (event: EventDetails) => {
+  const processTicketGeneration = async (event: EventDetails) => {
       if (!user) return;
+
+      let finalEventId = event.id;
       
+      // CRITICAL: Ensure event is saved to DB first so it appears in "Attending" list
+      const existsInDb = userEvents.some(e => e.id === event.id);
+      
+      if (!existsInDb) {
+          try {
+              const savedEvent = await saveEventToDb(event);
+              finalEventId = savedEvent.id;
+              setUserEvents(prev => [savedEvent, ...prev]);
+          } catch(e) {
+              console.error("Failed to save event before ticketing", e);
+              showToast("Error initializing event");
+              return;
+          }
+      }
+
       const newTicket: Ticket = {
-          id: `T-${Math.random().toString(36).substr(2, 6).toUpperCase()}`,
-          eventId: event.id,
+          id: `T-${Math.random().toString(36).substr(2, 6).toUpperCase()}`, // Temp ID, will be replaced by DB ID
+          eventId: finalEventId, 
           userId: user.id,
           userName: user.name,
-          qrCodeData: JSON.stringify({ eid: event.id, uid: user.id, ts: Date.now() }),
-          status: 'active',
+          qrCodeData: '{}', // Placeholder, TicketModal generates the real data from DB ID
+          status: 'active', 
           purchaseDate: Date.now(),
-          pricePaid: event.priceValue || 0,
+          pricePaid: event.priceValue || 0, 
           seatNumber: (event.soldSeats || 0) + 1
       };
-
-      setTickets(prev => [...prev, newTicket]);
-      
-      // Update Event Stats in Local Store
-      setUserEvents(prev => prev.map(e => {
-          if (e.id === event.id) {
-              const updated = {
-                  ...e,
-                  soldSeats: (e.soldSeats || 0) + 1,
-                  attendees: [...(e.attendees || []), user.id]
-              };
-              // Update currently viewing event details too
-              setSelectedEventDetails(updated as EventDetails);
-              return updated;
-          }
-          return e;
-      }));
-
-      setSelectedTicket(newTicket);
-      setShowTicket(true);
-      showToast("Ticket Confirmed!");
-  };
-
-  const handlePaymentSuccess = () => {
-      setShowPayment(false);
-      if (selectedEventDetails) processTicketGeneration(selectedEventDetails);
-  };
-
-  const handleScanSuccess = (decodedText: string) => {
-      setShowScanner(false);
       try {
-          // Simple validation - in real app would verify signature
+          // This saves to Firestore and returns the object with the REAL Firestore ID
+          const savedTicket = await saveTicketToDb(newTicket);
+          
+          await updateEventStats(finalEventId, user.id, event.priceValue || 0);
+          setTickets(prev => [...prev, savedTicket]);
+          setSelectedTicket(savedTicket);
+          setShowTicket(true);
+          showToast("Ticket Confirmed!");
+      } catch (e) { showToast("Error booking ticket"); }
+  };
+
+  // STEP 1: Verify the scanned code (Read-only)
+  const handleScanSuccess = async (decodedText: string) => {
+      let ticketId = decodedText;
+      try {
           const data = JSON.parse(decodedText);
-          if (data.eid === selectedEventDetails?.id) {
-             showToast("Valid Ticket: Check-in Successful");
-          } else {
-             showToast("Invalid Ticket: Wrong Event");
-          }
-      } catch (e) {
-          showToast("Invalid QR Code");
+          if (data.id) ticketId = data.id; 
+      } catch(e) {
+          // If scanning fails to parse JSON, it might be raw ID or invalid
+      }
+
+      // Call verify instead of redeem
+      const result = await verifyTicket(ticketId);
+      
+      if (result.success && result.ticket) {
+          return { valid: true, ticket: result.ticket };
+      } else {
+          return { valid: false, message: result.message || "Invalid Ticket" };
       }
   };
 
-  const handleLogin = (name: string, email: string) => {
-      setUser({ id: 'user-123', name, email, avatar: `https://ui-avatars.com/api/?name=${name}&background=0D8ABC&color=fff` });
-      setShowAuth(false);
-      showToast("Welcome back!");
+  // STEP 2: Confirm Entry (Write)
+  const handleConfirmCheckIn = async (ticketId: string) => {
+      const result = await confirmTicketEntry(ticketId);
+      return result.success;
   };
 
-  const handleHistoryClick = (item: HistoryItem) => {
-      if (item.type === 'view' && item.data) handleEventClick(item.data);
-      else if (item.type === 'itinerary' && item.data) { setItinerary(item.data); setView('itinerary'); }
-      else if (item.type === 'search') { setSearchQuery(item.title.replace('Search: ', '')); setView('home'); }
+  const handleLogin = async (newUser: User) => {
+      // 1. Fetch Data First (Preferences & Tickets)
+      try {
+          const prefs = await getUserPreferences(newUser.id);
+          const userTickets = await getUserTicketsFromDb(newUser.id);
+
+          if (prefs) {
+              setHistory(prefs.history || []);
+              setSavedEvents(prefs.savedEvents || []);
+              setReminders(prefs.reminders || []);
+          } else {
+              setHistory([]);
+              setSavedEvents([]);
+              setReminders([]);
+          }
+          setTickets(userTickets);
+      } catch (e) {
+          console.error("Error syncing login data", e);
+      }
+
+      // 2. Set User State and Close Auth
+      setUser(newUser); 
+      setShowAuth(false); 
+      showToast(`Welcome ${newUser.name}`);
+      localStorage.setItem('user', JSON.stringify(newUser));
+  };
+  
+  const handleLogout = async () => {
+      await logoutUser();
+      setUser(null); setHistory([]); setSavedEvents([]); setReminders([]); setTickets([]);
+      localStorage.removeItem('user'); setView('home');
+      showToast("Logged out");
   };
 
-  const handleClearHistory = () => { setHistory([]); try { localStorage.removeItem('history'); } catch(e) {} showToast("History Cleared"); };
-  const handleClearSaved = () => { setSavedEvents([]); try { localStorage.removeItem('savedEvents'); } catch(e) {} showToast("Saved Events Cleared"); };
-
-  // Determine if user has ticket for selected event
-  const existingTicket = selectedEventDetails && user ? tickets.find(t => t.eventId === selectedEventDetails.id && t.userId === user.id) : undefined;
-
-  const renderHome = () => (
-    <div className="pb-24 animate-blur-in">
-      <div className="relative bg-[radial-gradient(ellipse_at_top_right,_var(--tw-gradient-stops))] from-blue-900/40 via-slate-200 to-white dark:via-slate-900 dark:to-slate-950 pt-20 pb-12 px-6 rounded-b-[3rem] border-b border-slate-200 dark:border-slate-800/50 transition-colors duration-300">
-        <div className="max-w-3xl mx-auto">
-            <div className="flex justify-between items-start mb-6 animate-fade-up">
-                <div><h1 className="text-4xl font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-blue-600 to-teal-500 dark:from-blue-400 dark:to-teal-300 tracking-tight">EventHorizon</h1></div>
-                {user && <img src={user.avatar} className="w-10 h-10 rounded-full border border-slate-300 dark:border-slate-700 cursor-pointer hover:scale-105 transition-transform" alt="Profile" onClick={() => setView('profile')} />}
-            </div>
-          <p className="text-slate-600 dark:text-slate-300 text-lg mb-8 leading-relaxed max-w-xl animate-fade-up delay-100">Find the perfect moment. Plan the perfect day.</p>
-          <form onSubmit={handleSearch} className="relative shadow-2xl shadow-blue-900/20 animate-scale-in delay-200 group">
-            <input type="text" value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} placeholder="What's the plan?" className="w-full pl-12 pr-12 py-4 rounded-2xl bg-white/80 dark:bg-slate-800/80 backdrop-blur-md border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all" />
-            <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-blue-500 transition-colors" size={20} />
-            <button type="submit" className="absolute right-3 top-1/2 -translate-y-1/2 bg-blue-600 hover:bg-blue-500 text-white p-2 rounded-xl transition-colors shadow-lg"><Compass size={20} /></button>
-          </form>
-        </div>
-      </div>
-      <div className="max-w-5xl mx-auto px-6 mt-8">
-        <div className="flex items-center gap-2 mb-4 text-slate-800 dark:text-slate-200 font-semibold animate-fade-up delay-300"><Flame size={18} className="text-orange-500" /><h2>Trending Searches</h2></div>
-        <div className="flex flex-wrap gap-3 animate-fade-up delay-300">
-            {SUGGESTED_QUERIES.map((q, i) => <button key={i} onClick={() => { setSearchQuery(q); }} className="bg-white/80 dark:bg-slate-800/50 hover:bg-white dark:hover:bg-slate-800 text-slate-600 dark:text-slate-300 text-sm py-2.5 px-5 rounded-full border border-slate-200 dark:border-slate-800 transition-all active:scale-95 shadow-sm">{q}</button>)}
-        </div>
-        {userEvents.length > 0 && (
-             <div className="mt-8 animate-fade-up delay-300">
-                <h2 className="text-slate-800 dark:text-slate-200 font-semibold mb-4">Latest Community Events</h2>
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-                    {userEvents.slice(0, 4).map(ev => (
-                        <div key={ev.id} onClick={() => handleEventClick(ev)} className="cursor-pointer h-full">
-                            <EventCard event={ev} isSaved={savedEvents.some(e => e.id === ev.id)} hasReminder={reminders.includes(ev.id)} onToggleSave={handleToggleSave} onPlanItinerary={handlePlanItinerary} onToggleReminder={handleToggleReminder} onReport={handleReportEvent} />
-                        </div>
-                    ))}
-                </div>
-             </div>
-        )}
-      </div>
-    </div>
-  );
-
-  const renderEventList = (eventList: EventItem[], emptyMsg: string) => (
-    <div className="pb-24 px-4 pt-4 max-w-7xl mx-auto animate-blur-in">
-         {loadingState === LoadingState.SUCCESS && <p className="text-slate-500 dark:text-slate-400 text-sm mb-4 px-2">Found {eventList.length} results</p>}
-        {loadingState === LoadingState.LOADING && <div className="flex flex-col items-center justify-center py-20 space-y-4"><div className="relative"><div className="w-12 h-12 border-4 border-slate-300 dark:border-slate-700 border-t-blue-500 rounded-full animate-spin"></div><div className="absolute inset-0 flex items-center justify-center"><Sparkles size={16} className="text-blue-400 animate-pulse" /></div></div><p className="text-slate-500 dark:text-slate-400 text-sm tracking-wide">Scanning the horizon...</p></div>}
-        {loadingState === LoadingState.ERROR && <div className="flex flex-col items-center justify-center py-20 text-red-500 dark:text-red-400 bg-red-100 dark:bg-red-900/10 rounded-2xl border border-red-200 dark:border-red-900/30 mx-4"><AlertCircle size={40} className="mb-3" /><p>{errorMsg}</p></div>}
-        {loadingState === LoadingState.SUCCESS && eventList.length === 0 && <div className="text-center py-20 text-slate-500"><p>{emptyMsg}</p><button onClick={() => setView('create')} className="mt-4 text-blue-500 underline">Post an event yourself?</button></div>}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {eventList.map((event, index) => (
-                <div key={event.id} onClick={() => handleEventClick(event)} className="cursor-pointer h-full relative group animate-slide-up-fade" style={{ animationDelay: `${index * 50}ms` }}>
-                    {event.isUserCreated && <div className="absolute top-2 left-2 z-20 px-2 py-1 bg-blue-600/90 text-white text-[10px] font-bold uppercase rounded shadow backdrop-blur">Community</div>}
-                    <EventCard event={event} isSaved={savedEvents.some(e => e.id === event.id)} hasReminder={reminders.includes(event.id)} onToggleSave={handleToggleSave} onPlanItinerary={handlePlanItinerary} onToggleReminder={handleToggleReminder} onReport={handleReportEvent} />
-                </div>
-            ))}
-        </div>
-    </div>
-  );
+  // Filter events based on Tickets held
+  const attendingEvents = userEvents.filter(ev => tickets.some(t => t.eventId === ev.id));
 
   const renderContent = () => {
     switch (view) {
-      case 'home': return renderHome();
+      case 'home': return (
+        <div className="pb-24 animate-blur-in">
+           <div className="relative bg-gradient-to-br from-indigo-600 to-purple-700 pt-20 pb-12 px-6 rounded-b-[3rem] text-white shadow-xl">
+               <div className="absolute inset-0 bg-[url('https://www.transparenttextures.com/patterns/stardust.png')] opacity-20 pointer-events-none rounded-b-[3rem]"></div>
+               <div className="relative z-10">
+                   <div className="flex justify-between items-start mb-6">
+                       <h1 className="text-4xl font-extrabold tracking-tight">
+                           EventHorizon
+                       </h1>
+                       {user && <img src={user.avatar} className="w-10 h-10 rounded-full border-2 border-white/30 cursor-pointer hover:scale-105 transition-transform" onClick={() => setView('profile')} />}
+                   </div>
+                   <p className="text-indigo-100 text-lg mb-8 font-light">Find the perfect moment.</p>
+                   <form onSubmit={handleSearch} className="relative group"><input type="text" value={searchQuery} onChange={e => setSearchQuery(e.target.value)} placeholder="What's the plan?" className="w-full pl-12 py-4 rounded-2xl bg-white/10 backdrop-blur-md border border-white/20 text-white placeholder-indigo-200 focus:outline-none focus:bg-white/20 transition-all" /><Search className="absolute left-4 top-1/2 -translate-y-1/2 text-indigo-200" /></form>
+               </div>
+           </div>
+           <div className="px-6 mt-8">
+               <div className="flex flex-wrap gap-2 mb-8">{SUGGESTED_QUERIES.map(q => <button key={q} onClick={() => setSearchQuery(q)} className="bg-slate-100 dark:bg-slate-800 text-xs px-3 py-1.5 rounded-full hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors">{q}</button>)}</div>
+               {userEvents.length > 0 && <div className="grid grid-cols-1 md:grid-cols-2 gap-4">{userEvents.slice(0, 4).map(ev => <div key={ev.id} onClick={() => handleEventClick(ev)}><EventCard event={ev} isSaved={savedEvents.some(e => e.id === ev.id)} hasReminder={reminders.includes(ev.id)} onToggleSave={handleToggleSave} onPlanItinerary={handlePlanItinerary} onToggleReminder={handleToggleReminder} onReport={() => showToast("Reported")} /></div>)}</div>}
+           </div>
+        </div>
+      );
+      case 'search': return <><div className="sticky top-0 z-30 bg-white dark:bg-slate-900 p-4 border-b border-slate-100 dark:border-slate-800"><form onSubmit={handleSearch} className="relative"><Search className="absolute left-6 top-1/2 -translate-y-1/2 text-slate-400" /><input className="w-full bg-slate-100 dark:bg-slate-800 pl-10 p-3 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none" value={searchQuery} onChange={e => setSearchQuery(e.target.value)} /></form><FilterBar filters={filters} setFilters={setFilters} /></div><div className="p-4 grid gap-4">{loadingState === LoadingState.LOADING ? <div className="flex justify-center p-8"><div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div></div> : events.map(e => <div key={e.id} onClick={() => handleEventClick(e)}><EventCard event={e} isSaved={savedEvents.some(s => s.id === e.id)} hasReminder={false} onToggleSave={handleToggleSave} onPlanItinerary={handlePlanItinerary} onToggleReminder={handleToggleReminder} onReport={() => {}} /></div>)}</div></>;
+      
+      case 'saved': return (
+        <div className="min-h-screen pb-24 px-4 pt-6 animate-fade-in">
+           <h1 className="text-2xl font-bold text-slate-900 dark:text-white mb-6">Saved Events</h1>
+           {savedEvents.length === 0 ? (
+               <div className="flex flex-col items-center justify-center h-64 text-slate-500">
+                   <Heart size={48} className="mb-4 opacity-20" />
+                   <p>No events saved yet.</p>
+               </div>
+           ) : (
+               <div className="grid gap-4">
+                   {savedEvents.map(e => (
+                       <div key={e.id} onClick={() => handleEventClick(e)}>
+                           <EventCard 
+                               event={e} 
+                               isSaved={true} 
+                               hasReminder={reminders.includes(e.id)} 
+                               onToggleSave={handleToggleSave} 
+                               onPlanItinerary={handlePlanItinerary} 
+                               onToggleReminder={handleToggleReminder} 
+                               onReport={() => showToast("Reported")} 
+                           />
+                       </div>
+                   ))}
+               </div>
+           )}
+        </div>
+      );
+
+      case 'profile': return <ProfileView user={user} history={history} savedEvents={savedEvents} createdEvents={userEvents.filter(e => e.creatorId === user?.id)} attendingEvents={attendingEvents} onLogout={handleLogout} onLogin={() => setShowAuth(true)} onEventClick={handleEventClick} onHistoryClick={item => item.data && handleEventClick(item.data)} onCreateClick={() => setView('create')} onSettingsClick={() => setShowSettings(true)} />;
+      case 'details': return <EventDetailsView event={selectedEventDetails} currentUser={user} existingTicket={tickets.find(t => t.eventId === selectedEventDetails?.id)} hasReminder={false} isLoading={detailsLoading} onBack={() => setView('home')} onPlanItinerary={handlePlanItinerary} onToggleReminder={handleToggleReminder} onJoinEvent={handleJoinEvent} onViewTicket={t => { setSelectedTicket(t); setShowTicket(true); }} onScanTickets={() => setShowScanner(true)} onReport={() => showToast("Reported")} />;
       case 'create': return <CreateEventView onBack={() => setView('home')} onSubmit={handleCreateEvent} />;
-      case 'search': return <><div className="sticky top-0 z-30 bg-white/90 dark:bg-slate-900/90 backdrop-blur-xl border-b border-slate-200 dark:border-slate-800 pt-safe animate-fade-in transition-colors duration-300"><div className="p-4 pb-0 max-w-3xl mx-auto"><form onSubmit={handleSearch} className="relative"><Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={18} /><input type="text" value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} placeholder="Search..." className="w-full bg-slate-100 dark:bg-slate-800 text-slate-900 dark:text-white pl-10 pr-4 py-3 rounded-xl focus:outline-none focus:ring-1 focus:ring-blue-500 transition-all placeholder:text-slate-500" /></form></div><FilterBar filters={filters} setFilters={(f) => { setFilters(f); if(searchQuery) handleSearch(); }} /></div>{renderEventList(events, "No events found matching your criteria.")}</>;
-      case 'saved': return <><div className="sticky top-0 z-30 bg-white/90 dark:bg-slate-900/90 backdrop-blur-lg border-b border-slate-200 dark:border-slate-800 p-6 pt-safe transition-colors duration-300"><h1 className="text-2xl font-bold text-slate-900 dark:text-white">Saved Events</h1></div>{renderEventList(savedEvents, "No saved events yet.")}</>;
-      case 'profile': return <ProfileView user={user} history={history} savedEvents={savedEvents} createdEvents={userEvents} onLogout={() => setUser(null)} onLogin={() => setShowAuth(true)} onHistoryClick={handleHistoryClick} onCreateClick={() => { if (!user) setShowAuth(true); else setView('create'); }} onSettingsClick={() => setShowSettings(true)} />;
-      case 'details': return <EventDetailsView event={selectedEventDetails} currentUser={user} existingTicket={existingTicket} hasReminder={selectedEventDetails ? reminders.includes(selectedEventDetails.id) : false} onBack={() => setView(history.length > 0 && history[0].type === 'search' ? 'search' : 'home')} onPlanItinerary={handlePlanItinerary} onToggleReminder={handleToggleReminder} onJoinEvent={handleJoinEvent} onViewTicket={(t) => { setSelectedTicket(t); setShowTicket(true); }} onScanTickets={() => setShowScanner(true)} onReport={handleReportEvent} isLoading={detailsLoading} />;
       case 'itinerary': return <ItineraryView itinerary={itinerary} event={selectedEventDetails} onBack={() => setView('details')} isLoading={itineraryLoading} />;
-      default: return renderHome();
+      default: return null;
     }
   };
 
   return (
-    <div className="min-h-screen bg-gray-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 font-sans selection:bg-blue-500/30 overflow-x-hidden transition-colors duration-300">
+    <div className="min-h-screen bg-gray-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 transition-colors">
       <Toast message={toast.msg} visible={toast.show} />
-      <div className="mx-auto min-h-screen relative">{renderContent()}</div>
-      {view === 'home' && <button onClick={() => { if (!user) setShowAuth(true); else setView('create'); }} className="fixed bottom-20 right-6 z-40 bg-blue-600 hover:bg-blue-500 text-white p-4 rounded-full shadow-2xl shadow-blue-600/30 transition-transform hover:scale-105 active:scale-95 animate-scale-in" aria-label="Create Event"><Plus size={28} /></button>}
-      {!['itinerary', 'details', 'create'].includes(view) && <BottomNav currentView={view} setView={setView} />}
+      {renderContent()}
+      {view === 'home' && <button onClick={() => user ? setView('create') : setShowAuth(true)} className="fixed bottom-20 right-6 bg-blue-600 hover:bg-blue-500 text-white p-4 rounded-full shadow-2xl z-40 transition-transform active:scale-95"><Plus size={28} /></button>}
+      {!['itinerary','details','create'].includes(view) && <BottomNav currentView={view} setView={setView} />}
       {showAuth && <AuthOverlay onClose={() => setShowAuth(false)} onLogin={handleLogin} />}
-      {showSettings && <SettingsOverlay onClose={() => setShowSettings(false)} onClearHistory={handleClearHistory} onClearSaved={handleClearSaved} toggleTheme={toggleTheme} currentTheme={theme} />}
-      {showPayment && selectedEventDetails && <PaymentModal event={selectedEventDetails} onClose={() => setShowPayment(false)} onSuccess={handlePaymentSuccess} />}
+      {showSettings && <SettingsOverlay onClose={() => setShowSettings(false)} onClearHistory={() => setHistory([])} onClearSaved={() => setSavedEvents([])} toggleTheme={toggleTheme} currentTheme={theme} />}
+      {showPayment && selectedEventDetails && <PaymentModal event={selectedEventDetails} onClose={() => setShowPayment(false)} onSuccess={() => { setShowPayment(false); if(selectedEventDetails) processTicketGeneration(selectedEventDetails); }} />}
       {showTicket && selectedTicket && selectedEventDetails && <TicketModal ticket={selectedTicket} event={selectedEventDetails} onClose={() => setShowTicket(false)} />}
-      {showScanner && <ScannerModal onClose={() => setShowScanner(false)} onScanSuccess={handleScanSuccess} />}
+      
+      {showScanner && (
+          <ScannerModal 
+            onClose={() => setShowScanner(false)} 
+            onScanSuccess={handleScanSuccess} 
+            onConfirmEntry={handleConfirmCheckIn}
+          />
+      )}
     </div>
   );
 }

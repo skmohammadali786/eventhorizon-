@@ -47,7 +47,8 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({ event, onClose, onSu
                     <div className="flex justify-between items-center mb-6">
                         <div>
                             <p className="text-sm text-slate-500 dark:text-slate-400">Total Amount</p>
-                            <p className="text-2xl font-bold text-slate-900 dark:text-white">${event.priceValue}</p>
+                            {/* CHANGED: Currency symbol to ₹ */}
+                            <p className="text-2xl font-bold text-slate-900 dark:text-white">₹{event.priceValue}</p>
                         </div>
                         <div className="text-right">
                              <p className="text-sm text-slate-500 dark:text-slate-400">{event.title}</p>
@@ -83,7 +84,8 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({ event, onClose, onSu
                             {isProcessing ? (
                                 <>Processing...</>
                             ) : (
-                                <>Pay ${event.priceValue}</>
+                                // CHANGED: Currency symbol to ₹
+                                <>Pay ₹{event.priceValue}</>
                             )}
                         </button>
                     </form>

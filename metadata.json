@@ -2,6 +2,7 @@
   "name": "EventHorizon",
   "description": "A smart, AI-powered event discovery application. Search for real-world events, discover deep details, and generate personalized itineraries.",
   "requestFramePermissions": [
-    "geolocation"
+    "geolocation",
+    "camera"
   ]
 }

@@ -191,20 +191,55 @@ export const getEventDetails = async (event: EventItem): Promise<EventDetails> =
 
 /**
  * Generates an itinerary for a specific event.
+ * Tailored for Host (Logistics) or Attendee (Fun).
  */
-export const generateItineraryForEvent = async (event: EventItem): Promise<Itinerary> => {
+export const generateItineraryForEvent = async (event: EventItem, role: 'host' | 'attendee' = 'attendee'): Promise<Itinerary> => {
   try {
     const modelId = 'gemini-2.5-flash';
     
-    const prompt = `
-      Create a fun, detailed one-day itinerary for a user attending this event:
-      Event: ${event.title}
-      Location: ${event.location}
-      Time: ${event.date}
-      
-      Include pre-event activities (like a meal or sightseeing nearby) and post-event activities.
-      The output must strictly follow the JSON schema provided.
-    `;
+    // Calculate reference times if isoDate exists
+    let timeContext = "";
+    if (event.isoDate) {
+        const dt = new Date(event.isoDate);
+        timeContext = `The event officially starts at ${dt.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})} on ${dt.toLocaleDateString()}.`;
+    }
+
+    let prompt = "";
+    if (role === 'host') {
+        prompt = `
+          You are an expert Event Director. Create a precise 'Run of Show' itinerary for the HOST of this event:
+          Event: ${event.title}
+          Location: ${event.location}
+          Time Context: ${timeContext || event.date}
+          
+          Start the itinerary 2-3 hours BEFORE the event start time for setup.
+          Include: Vendor arrival, Sound/Light check, Staff Briefing, Doors Open, Main Event Start, Intermissions, End of Show, and Load-out/Cleanup.
+          
+          Mapping Rules for Icons:
+          - Use 'activity' icon for: Setup, Sound Check, Briefings, Cleanup.
+          - Use 'event' icon for: Doors Open, Show Start, Key Performances.
+          - Use 'food' icon for: Staff meals/breaks.
+          
+          Tone: Logistical, professional, imperative.
+        `;
+    } else {
+        prompt = `
+          Create a fun, engaging one-day itinerary for an ATTENDEE going to this event:
+          Event: ${event.title}
+          Location: ${event.location}
+          Time Context: ${timeContext || event.date}
+          
+          Start the itinerary a few hours before the event with suggestions for:
+          - Pre-event coffee or meal nearby.
+          - Transport/Arrival.
+          - The Main Event.
+          - Post-event drinks, dessert, or nightlife.
+          
+          Tone: Exciting, helpful, adventurous.
+        `;
+    }
+    
+    prompt += ` The output must strictly follow the JSON schema provided.`;
 
     const response = await ai.models.generateContent({
       model: modelId,
@@ -214,13 +249,13 @@ export const generateItineraryForEvent = async (event: EventItem): Promise<Itine
         responseSchema: {
           type: Type.OBJECT,
           properties: {
-            title: { type: Type.STRING },
+            title: { type: Type.STRING, description: "A catchy title for the plan (e.g. 'Logistical Run of Show' or 'The Perfect Night Out')" },
             items: {
               type: Type.ARRAY,
               items: {
                 type: Type.OBJECT,
                 properties: {
-                  time: { type: Type.STRING },
+                  time: { type: Type.STRING, description: "e.g. '4:00 PM'" },
                   activity: { type: Type.STRING },
                   description: { type: Type.STRING },
                   icon: { type: Type.STRING, enum: ['food', 'activity', 'travel', 'event'] }

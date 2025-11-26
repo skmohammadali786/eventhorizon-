@@ -68,12 +68,22 @@ export const CreateEventView: React.FC<CreateEventViewProps> = ({ onBack, onSubm
   // Update preview object in real-time
   useEffect(() => {
       const priceVal = parseFloat(formData.ticketPrice) || 0;
-      const displayPrice = priceVal > 0 ? `$${priceVal}` : 'Free';
+      // CHANGED: Currency symbol to ₹
+      const displayPrice = priceVal > 0 ? `₹${priceVal}` : 'Free';
+      
+      // Generate ISO date for counting down
+      let isoDate = undefined;
+      if (formData.date && formData.time) {
+          try {
+              isoDate = new Date(`${formData.date}T${formData.time}`).toISOString();
+          } catch(e) {}
+      }
 
       setPreviewItem({
           id: 'preview',
           title: formData.title || 'Event Title',
           date: formData.date ? `${formData.date} at ${formData.time}` : 'Date & Time',
+          isoDate: isoDate,
           location: formData.location || 'Location',
           coordinates: formData.coordinates,
           description: formData.description || 'Description will appear here...',
@@ -356,7 +366,7 @@ export const CreateEventView: React.FC<CreateEventViewProps> = ({ onBack, onSubm
                     <input
                         required
                         type="number"
-                        placeholder="Price ($)"
+                        placeholder="Price (₹)"
                         className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-4 pl-12 text-slate-900 dark:text-white focus:ring-2 focus:ring-blue-500 outline-none transition-all"
                         value={formData.ticketPrice}
                         onChange={e => setFormData({...formData, ticketPrice: e.target.value})}
@@ -408,14 +418,14 @@ export const CreateEventView: React.FC<CreateEventViewProps> = ({ onBack, onSubm
                     <div className="absolute inset-0 flex flex-col items-center justify-center text-slate-400">
                          {isUploading ? <Loader2 className="animate-spin mb-2" /> : <ImageIcon size={32} className="mb-2" />}
                          <span className="text-sm font-medium">Click to upload image</span>
+                         <input 
+                            type="file" 
+                            accept="image/*" 
+                            onChange={handleImageUpload} 
+                            className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-50" 
+                        />
                     </div>
                 )}
-                <input 
-                    type="file" 
-                    accept="image/*" 
-                    onChange={handleImageUpload} 
-                    className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-50" 
-                />
             </div>
           </div>
 

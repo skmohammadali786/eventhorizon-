@@ -24,8 +24,16 @@ export const TicketModal: React.FC<TicketModalProps> = ({ ticket, event, onClose
              // Safe access to CorrectLevel
              const correctLevel = window.QRCode.CorrectLevel ? window.QRCode.CorrectLevel.H : 2;
 
+             // CRITICAL FIX: We must generate the QR using the Ticket ID (which matches the DB Document ID)
+             // The ticket.qrCodeData field might be stale or lack the ID if generated before saving.
+             const securePayload = JSON.stringify({
+                 id: ticket.id,
+                 uid: ticket.userId,
+                 eid: ticket.eventId
+             });
+
              new window.QRCode(qrRef.current, {
-                text: ticket.qrCodeData,
+                text: securePayload,
                 width: 180,
                 height: 180,
                 colorDark : "#000000",

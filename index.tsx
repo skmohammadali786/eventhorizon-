@@ -2,6 +2,7 @@ import React from 'react';
 import ReactDOM from 'react-dom/client';
 import App from './App';
 
+// Error Boundary to catch crashes (like missing API keys) and show a UI instead of a white screen
 interface ErrorBoundaryProps {
   children: React.ReactNode;
 }
@@ -29,8 +30,8 @@ class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoundarySta
     if (this.state.hasError) {
       return (
         <div style={{ padding: '20px', fontFamily: 'sans-serif', textAlign: 'center', marginTop: '50px' }}>
-          <h1 style={{ color: '#ef4444' }}>Something went wrong.</h1>
-          <p style={{ color: '#374151' }}>The application encountered an unexpected error.</p>
+          <h1 style={{ color: '#ef4444' }}>Application Error</h1>
+          <p style={{ color: '#374151' }}>Something went wrong. Please check the console for details.</p>
           <pre style={{ 
             textAlign: 'left', 
             background: '#f3f4f6', 
@@ -55,13 +56,14 @@ class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoundarySta
               fontWeight: 'bold'
             }}
           >
-            Reload Application
+            Reload
           </button>
         </div>
       );
     }
 
-    return this.props.children;
+    // Explicitly cast 'this' to any to bypass the TypeScript error "Property 'props' does not exist on type 'ErrorBoundary'"
+    return (this as any).props.children;
   }
 }
 

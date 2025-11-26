@@ -20,23 +20,21 @@ export interface Ticket {
 export interface EventItem {
   id: string;
   title: string;
-  date: string; // Display date string (e.g. "Friday, 7 PM")
-  isoDate?: string; // ISO string for sorting (e.g. "2023-10-27T19:00:00")
+  date: string;
+  isoDate?: string;
   location: string;
-  coordinates?: { lat: number; lng: number }; // Added for map support
+  coordinates?: { lat: number; lng: number };
   description: string;
   category?: string;
   imageUrl?: string;
   sourceUrl?: string;
   isUserCreated?: boolean;
   price?: string;
-  
-  // Ticketing Fields
   maxSeats?: number;
   soldSeats?: number;
-  priceValue?: number; // Numeric price for calculation
-  attendees?: string[]; // Array of User IDs
-  creatorId?: string; // User ID of creator
+  priceValue?: number;
+  attendees?: string[];
+  creatorId?: string;
 }
 
 export interface EventDetails extends EventItem {

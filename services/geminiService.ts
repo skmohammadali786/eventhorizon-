@@ -1,7 +1,19 @@
 import { GoogleGenAI, Type } from "@google/genai";
 import { EventItem, Itinerary, EventDetails, FilterOptions } from "../types";
 
-const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+// SAFELY ACCESS PROCESS.ENV
+// This prevents "ReferenceError: process is not defined" in browser environments
+const getApiKey = () => {
+    try {
+        if (typeof process !== 'undefined' && process.env) {
+            return process.env.API_KEY;
+        }
+    } catch (e) {}
+    return '';
+};
+
+const apiKey = getApiKey();
+const ai = new GoogleGenAI({ apiKey: apiKey || 'DUMMY_KEY_TO_PREVENT_CRASH' });
 
 /**
  * Helper to extract JSON from markdown code blocks or raw text
@@ -41,6 +53,11 @@ const extractJson = (text: string): any => {
  * Searches for events using AI with Search Grounding.
  */
 export const searchEventsWithGemini = async (query: string, filters?: FilterOptions): Promise<EventItem[]> => {
+  if (!apiKey) {
+      console.warn("Missing API Key");
+      return [];
+  }
+  
   try {
     const modelId = 'gemini-2.5-flash';
     const today = new Date().toDateString();
@@ -143,6 +160,8 @@ export const getEventDetails = async (event: EventItem): Promise<EventDetails> =
       };
   }
 
+  if (!apiKey) return event as EventDetails;
+
   try {
     const modelId = 'gemini-2.5-flash';
 
@@ -194,6 +213,8 @@ export const getEventDetails = async (event: EventItem): Promise<EventDetails> =
  * Tailored for Host (Logistics) or Attendee (Fun).
  */
 export const generateItineraryForEvent = async (event: EventItem, role: 'host' | 'attendee' = 'attendee'): Promise<Itinerary> => {
+  if (!apiKey) throw new Error("API Key missing");
+
   try {
     const modelId = 'gemini-2.5-flash';
     

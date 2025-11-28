@@ -4,6 +4,12 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
     <title>EventHorizon</title>
+    
+    <!-- CRITICAL FIX: Polyfill 'process' to prevent White Screen of Death in browsers -->
+    <script>
+      window.process = window.process || { env: { API_KEY: '' } };
+    </script>
+
     <script src="https://cdn.tailwindcss.com"></script>
     <script>
       tailwind.config = {

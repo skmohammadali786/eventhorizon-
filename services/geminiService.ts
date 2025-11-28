@@ -1,17 +1,26 @@
 import { GoogleGenAI, Type } from "@google/genai";
 import { EventItem, Itinerary, EventDetails, FilterOptions } from "../types";
 
+// Bulletproof API Key retrieval that won't crash the browser
 const getApiKey = () => {
     try {
-        if (typeof process !== 'undefined' && process.env) {
+        // First check if the polyfill exists
+        if (typeof window !== 'undefined' && (window as any).process && (window as any).process.env && (window as any).process.env.API_KEY) {
+            return (window as any).process.env.API_KEY;
+        }
+        // Then check if real process exists (Node/Build env)
+        if (typeof process !== 'undefined' && process.env && process.env.API_KEY) {
             return process.env.API_KEY;
         }
-    } catch (e) {}
+    } catch (e) {
+        console.warn("Failed to retrieve API KEY safely", e);
+    }
     return '';
 };
 
 const apiKey = getApiKey();
-const ai = new GoogleGenAI({ apiKey: apiKey || 'DUMMY' });
+// Initialize with dummy if missing so app loads, but calls will fail gracefully
+const ai = new GoogleGenAI({ apiKey: apiKey || 'DUMMY_KEY_FOR_INIT' });
 
 const extractJson = (text: string): any => {
     let cleanText = text.replace(/```json/gi, '').replace(/```/g, '').trim();
@@ -25,7 +34,10 @@ const extractJson = (text: string): any => {
 };
 
 export const searchEventsWithGemini = async (query: string, filters?: FilterOptions): Promise<EventItem[]> => {
-  if (!apiKey) return [];
+  if (!apiKey || apiKey === 'DUMMY_KEY_FOR_INIT') {
+      console.warn("Gemini API Key missing. Search skipped.");
+      return [];
+  }
   try {
     const today = new Date().toDateString();
     let filterPrompt = "";
@@ -64,7 +76,7 @@ export const searchEventsWithGemini = async (query: string, filters?: FilterOpti
 
 export const getEventDetails = async (event: EventItem): Promise<EventDetails> => {
   if (event.isUserCreated) return { ...event, fullAddress: event.location, priceRange: event.price };
-  if (!apiKey) return event;
+  if (!apiKey || apiKey === 'DUMMY_KEY_FOR_INIT') return event;
   try {
     const response = await ai.models.generateContent({
       model: 'gemini-2.5-flash',
@@ -90,11 +102,11 @@ export const getEventDetails = async (event: EventItem): Promise<EventDetails> =
 };
 
 export const generateItineraryForEvent = async (event: EventItem, role: 'host' | 'attendee' = 'attendee'): Promise<Itinerary> => {
-  if (!apiKey) throw new Error("API Key missing");
+  if (!apiKey || apiKey === 'DUMMY_KEY_FOR_INIT') throw new Error("API Key missing");
   try {
     const prompt = role === 'host' 
-        ? `Create a logistical 'Run of Show' itinerary for the HOST of: ${event.title}. Include setup, doors, show, cleanup.` 
-        : `Create a fun attendee itinerary for: ${event.title}. Include pre-event meal, event, post-event.`;
+        ? `Create a logistical 'Run of Show' itinerary for the HOST of: ${event.title}. The date is ${event.isoDate || 'today'}. Return valid JSON.` 
+        : `Create a fun attendee itinerary for: ${event.title}. The date is ${event.isoDate || 'today'}. Return valid JSON.`;
 
     const response = await ai.models.generateContent({
       model: 'gemini-2.5-flash',

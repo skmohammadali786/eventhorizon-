@@ -5,9 +5,13 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
     <title>EventHorizon</title>
     
-    <!-- CRITICAL FIX: Polyfill 'process' to prevent White Screen of Death in browsers -->
+    <!-- CRITICAL FIX: Polyfill 'process' and inject API KEY -->
     <script>
-      window.process = window.process || { env: { API_KEY: 'AIzaSyCPrT2njsrpXhk8mLBmEVrRlB5GeuPDa_I' } };
+      window.process = window.process || { 
+        env: { 
+          API_KEY: 'AIzaSyCPrT2njsrpXhk8mLBmEVrRlB5GeuPDa_I' 
+        } 
+      };
     </script>
 
     <script src="https://cdn.tailwindcss.com"></script>
@@ -87,5 +91,7 @@
 </head>
   <body class="bg-gray-50 dark:bg-slate-950 text-slate-900 dark:text-slate-50 transition-colors duration-300">
     <div id="root"></div>
+    <!-- THIS IS THE MISSING LINK THAT LOADS YOUR APP -->
+    <script type="module" src="./index.tsx"></script>
   </body>
 </html>
